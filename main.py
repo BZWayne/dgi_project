@@ -9,8 +9,15 @@ import numpy as np
 import argparse, imutils
 import time, dlib, cv2, datetime
 from itertools import zip_longest
+import sys
 
-
+# print OPENCV information to check if the current installation support Gstreamer
+# if no Gstreamer module is aviable remove opencv and reinstall using pip install opencv-contrib-python
+cv2info = cv2.getBuildInformation()
+if 'GStreamer:                   NO' in cv2info:
+	print(cv2info)
+	print("GStreamer is not support in this opencv installation.")
+	exit()
 
 #python3 main.py --prototxt mobilenet_ssd/MobileNetSSD_deploy.prototxt --model mobilenet_ssd/MobileNetSSD_deploy.caffemodel
 
@@ -53,13 +60,25 @@ def run():
 	video/x-raw(memory:NVMM),format=NV12,width=640,height=360,framerate=52/1 ! nvv4l2h264enc insert-sps-pps=1  \
 		insert-vui=1 idrinterval=30bitrate=1000000 EnableTwopassCBR=1  ! h264parse ! rtph264pay ! udpsink host=127.0.0.1 port=5004 auto-multicast=0"
 	
-	camset = 'v4l2src device=/dev/video0 ! video/x-raw, format=YUY2, width=640, height=480, pixel-aspect-ratio=1/1, framerate=30/1 ! videoconvert ! autovideosink'
+	# NOTE (FROM MATTIA): 
+	# 1. you where using the autovideosink, this wiil create a sink to create a video, woverve the vdeo is not sent back to opencv
+	#    appsink and appsrc are instead used to send frame in the program memory enabling th program to load and use them
+	# 2. opencv expect BGR image so I tell gstreamer to convert (videoparse) the camera input to bgr instad of YUY2
+	# Your(old) camset -> camset = 'v4l2src device=/dev/video0 ! video/x-raw, format=YUY2, width=640, height=480, pixel-aspect-ratio=1/1, framerate=30/1 ! videoconvert ! appsink'
+	camset = 'v4l2src device=/dev/video0 ! video/x-raw, width=640, height=480 ! videoconvert ! video/x-raw,format=BGR ! appsink'
 
 	vs = cv2.VideoCapture(camset, cv2.CAP_GSTREAMER)
 
-	frame_width = 640
-	frame_height = 480
-	fps = 30.
+	frame_width = vs.get(cv2.CAP_PROP_FRAME_WIDTH)
+	frame_height = vs.get(cv2.CAP_PROP_FRAME_HEIGHT)
+	fps = vs.get(cv2.CAP_PROP_FPS)
+
+	print('Src opened, %dx%d @ %d fps' % (frame_width, frame_height, fps))
+
+	if not vs.isOpened():
+		print("Pipleine failed to rollout")
+		exit()
+
 	show = True
 	# out = cv2.VideoWriter(gst_str_rtp, cv2.CAP_GSTREAMER, 0, fps, (frame_width, frame_height), show)
 	time.sleep(2.0)
@@ -89,6 +108,11 @@ def run():
 	while True:
 
 		ret, frame = vs.read()
+		if not frame:
+			# Added check to wait for a frame from gStreamer
+			continue
+		
+		print("recive frames")
 
 		if frame is not None:  # add this line
 			(height, width) = frame.shape[:2] 
