@@ -2,7 +2,7 @@
 **Author**: *Bauyrzhan Zhakanov*, [bauyrzhan.zhakanov@gmail.com](bauyrzhan.zhakanov@gmail.com)
 
 ## Introduction
-**Goal** a develop a system to control the temperature in a room based on the people inside based on DGIStreamer tool. 
+**Goal** a develop a system to control the temperature in a room based on the people inside based on DGIStreamer tool. All the rights for **CYENS**.
 
 Plan for the first time is to build a connection between local and remote systems using DGIStreamer. This is possible with a help of SSH. It takes streaming video as input, counts the number of people crossing a tripwire and sends the live data to the cloud. 
 
