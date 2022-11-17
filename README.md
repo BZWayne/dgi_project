@@ -1,1 +1,1 @@
-# dgi_streamer_project
+# Lab temperature control based on the human control using Dgistream
