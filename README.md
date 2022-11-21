@@ -11,3 +11,5 @@ The number of people can be counted with a help of OpenCV, Python3. The system c
 - if there is no people crossed the line, then room is 21 degrees
 
 - if there is some people crossed the line, then room is 20 degree
+
+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
