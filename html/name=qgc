@@ -1,0 +1,1 @@
+    qgc. ! queue ! decodebin ! glupload ! glcolorconvert ! qmlglsink name=sink    qgc. ! queue ! mp4mux ! filesink location=bleh.mp4
