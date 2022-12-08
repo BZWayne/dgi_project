@@ -8,8 +8,6 @@ Plan for the first time is to build a connection between local and remote system
 
 The number of people can be counted with a help of OpenCV, Python3. The system could be connected through the same internet or Wifi. To control room temperature, the simple counting technique will be used. If a person or people crosses a particular line in a camera, then it would be considered as part of count. A person would be detected using the box of Human Detection Deep Learning techniques that would allow to recognise a person from image. If a box of person or boxes of people intersects with a particular line inside the frame, then it would be considered as part of count. For instance:
 
-- if there is no people crossed the line, then room is 21 degrees
+- if there is no people crossed the line, then 0 person
 
-- if there is some people crossed the line, then room is 20 degree
-
-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
+- if there is some people crossed the line, then +1 person
