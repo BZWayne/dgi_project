@@ -7,12 +7,132 @@ from mylib import config, thread
 import time, schedule, csv
 import numpy as np
 import argparse, imutils
-import time, dlib, cv2, datetime
+import time
+import dlib
+import cv2
+import datetime
 from itertools import zip_longest
 import sys
 
-# print OPENCV information to check if the current installation support Gstreamer
-# if no Gstreamer module is aviable remove opencv and reinstall using pip install opencv-contrib-python
+import gi
+
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
+
+
+class Video():
+    """BlueRov video capture class constructor
+    Attributes:
+        port (int): Video UDP port
+        video_codec (string): Source h264 parser
+        video_decode (string): Transform YUV (12bits) to BGR (24bits)
+        video_pipe (object): GStreamer top-level pipeline
+        video_sink (object): Gstreamer sink element
+        video_sink_conf (string): Sink configuration
+        video_source (string): Udp source ip and port
+    """
+
+    def __init__(self, port=5000):
+        """Summary
+        Args:
+            port (int, optional): UDP port
+        """
+
+        Gst.init(None)
+
+        self.port = port
+        self._frame = None
+        self.video_source = 'udpsrc port={}'.format(self.port)
+        self.video_codec = '! application/x-rtp, payload=96 ! rtpjpegdepay ! jpegdec'
+        self.video_decode = \
+            '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert'
+        self.video_sink_conf = \
+            '! appsink emit-signals=true sync=false max-buffers=2 drop=true'
+
+        self.video_pipe = None
+        self.video_sink = None
+
+        self.run()
+
+    def start_gst(self, config=None):
+        """ Start gstreamer pipeline and sink
+        Pipeline description list e.g:
+            [
+                'videotestsrc ! decodebin', \
+                '! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
+                '! appsink'
+            ]
+        Args:
+            config (list, optional): Gstreamer pileline description list
+        """
+
+        if not config:
+            config = \
+                [
+                    'videotestsrc ! decodebin',
+                    '! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
+                    '! appsink'
+                ]
+
+        command = ' '.join(config)
+        self.video_pipe = Gst.parse_launch(command)
+        self.video_pipe.set_state(Gst.State.PLAYING)
+        self.video_sink = self.video_pipe.get_by_name('appsink0')
+
+    @staticmethod
+    def gst_to_opencv(sample):
+        """Transform byte array into np array
+        Args:
+            sample (TYPE): Description
+        Returns:
+            TYPE: Description
+        """
+        buf = sample.get_buffer()
+        caps = sample.get_caps()
+        array = np.ndarray(
+            (
+                caps.get_structure(0).get_value('height'),
+                caps.get_structure(0).get_value('width'),
+                3
+            ),
+            buffer=buf.extract_dup(0, buf.get_size()), dtype=np.uint8)
+        return array
+
+    def frame(self):
+        """ Get Frame
+        Returns:
+            iterable: bool and image frame, cap.read() output
+        """
+        return self._frame
+
+    def frame_available(self):
+        """Check if frame is available
+        Returns:
+            bool: true if frame is available
+        """
+        return type(self._frame) != type(None)
+
+    def run(self):
+        """ Get frame to update _frame
+        """
+
+        self.start_gst(
+            [
+                self.video_source,
+                self.video_codec,
+                self.video_decode,
+                self.video_sink_conf
+            ])
+
+        self.video_sink.connect('new-sample', self.callback)
+
+    def callback(self, sink):
+        sample = sink.emit('pull-sample')
+        new_frame = self.gst_to_opencv(sample)
+        self._frame = new_frame
+
+        return Gst.FlowReturn.OK
+
 cv2info = cv2.getBuildInformation()
 if 'GStreamer:                   NO' in cv2info:
 	print(cv2info)
@@ -20,8 +140,6 @@ if 'GStreamer:                   NO' in cv2info:
 	exit()
 
 #python3 main.py --prototxt mobilenet_ssd/MobileNetSSD_deploy.prototxt --model mobilenet_ssd/MobileNetSSD_deploy.caffemodel
-
-# gst-launch-1.0 udpsrc address=0.0.0.0 port=5004 ! application/x-rtp,media=video,encoding-name=H264 ! queue ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! autovideosink
 
 t0 = time.time()
 
@@ -52,35 +170,10 @@ def run():
 	net = cv2.dnn.readNetFromCaffe(args["prototxt"], args["model"])
 
 	print("[INFO] Starting the live stream..")
-	# vs = cv2.VideoCapture(0)
+
+	camset = 'udpsrc port=5000 ! application/x-rtp, payload=96 ! rtpjpegdepay ! jpegdec ! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert ! appsink emit-signals=true sync=false max-buffers=2 drop=true'
 	
-	# camset='v4l2src device=/dev/video0 ! video/x-raw,width=640,height=360,framerate=52/1 ! nvvidconv flip-method=0 ! video/x-raw(memory:NVMM), format=I420, width=640, height=360 ! nvvidconv ! video/x-raw, format=BGRx ! videoconvert ! video/x-raw, format=BGR ! queue ! appsink drop=1'
-
-	gst_str_rtp = "appsrc ! video/x-raw,format=BGR ! queue ! videoconvert ! video/x-raw,format=BGRx ! nvvidconv !\
-	video/x-raw(memory:NVMM),format=NV12,width=640,height=360,framerate=52/1 ! nvv4l2h264enc insert-sps-pps=1  \
-		insert-vui=1 idrinterval=30bitrate=1000000 EnableTwopassCBR=1  ! h264parse ! rtph264pay ! udpsink host=127.0.0.1 port=5004 auto-multicast=0"
-	
-	# NOTE (FROM MATTIA): 
-	# 1. you where using the autovideosink, this wiil create a sink to create a video, woverve the vdeo is not sent back to opencv
-	#    appsink and appsrc are instead used to send frame in the program memory enabling th program to load and use them
-	# 2. opencv expect BGR image so I tell gstreamer to convert (videoparse) the camera input to bgr instad of YUY2
-	# Your(old) camset -> camset = 'v4l2src device=/dev/video0 ! video/x-raw, format=YUY2, width=640, height=480, pixel-aspect-ratio=1/1, framerate=30/1 ! videoconvert ! appsink'
-	camset = 'v4l2src device=/dev/video0 ! video/x-raw, width=640, height=480 ! videoconvert ! video/x-raw,format=BGR ! appsink'
-
-	vs = cv2.VideoCapture(camset, cv2.CAP_GSTREAMER)
-
-	frame_width = vs.get(cv2.CAP_PROP_FRAME_WIDTH)
-	frame_height = vs.get(cv2.CAP_PROP_FRAME_HEIGHT)
-	fps = vs.get(cv2.CAP_PROP_FPS)
-
-	print('Src opened, %dx%d @ %d fps' % (frame_width, frame_height, fps))
-
-	if not vs.isOpened():
-		print("Pipleine failed to rollout")
-		exit()
-
-	show = True
-	# out = cv2.VideoWriter(gst_str_rtp, cv2.CAP_GSTREAMER, 0, fps, (frame_width, frame_height), show)
+	vs = Video()
 	time.sleep(2.0)
 
 	writer = None
@@ -106,13 +199,16 @@ def run():
 		vs = thread.ThreadingClass(config.url)
 
 	while True:
+		if not vs.frame_available():
+            		continue
 
-		ret, frame = vs.read()
-		if not frame:
+		#ret, frame = vs.read()
+		frame = vs.frame()
+		#if not frame:
 			# Added check to wait for a frame from gStreamer
-			continue
+		#	continue
 		
-		print("recive frames")
+		print("receive frames")
 
 		if frame is not None:  # add this line
 			(height, width) = frame.shape[:2] 
