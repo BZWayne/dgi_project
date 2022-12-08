@@ -11,3 +11,16 @@ The number of people can be counted with a help of OpenCV, Python3. The system c
 - if there is no people crossed the line, then 0 person
 
 - if there is some people crossed the line, then +1 person
+
+## LAUNCH 
+
+### Ubuntu 20.04: Dgistreamer as SENDER
+- Load sender.json to Dgistreamer. 
+- Correct the IP and PORT
+
+### Jetson Nano Jetpack 4.4: OpenCV +  gstreamer + ML as RECEIVER
+
+```bash
+pip3 install -r requirements.txt
+python3 main.py --prototxt mobilenet_ssd/MobileNetSSD_deploy.prototxt --model mobilenet_ssd/MobileNetSSD_deploy.caffemodel 
+```
